@@ -34,3 +34,140 @@ for shape in slide.shapes:
         tc = tbl.rows[3].cells[1]._tc
         print(etree.tostring(tc, pretty_print=True).decode())
         break
+def parse_table(shape) -> dict:
+    info: dict[str, Any] = {
+        "id":   shape.shape_id,
+        "name": shape.name,
+        "type": "table",
+        "bbox": bbox(shape),
+        "rows": [],
+    }
+    tbl = shape.table
+    info["row_count"] = len(list(tbl.rows))
+    info["col_count"] = len(list(tbl.columns))
+
+    col_widths  = [col.width  for col in tbl.columns]
+    row_heights = [row.height for row in tbl.rows]
+    table_left  = shape.left
+    table_top   = shape.top
+
+    # ── Step1: 先にmerge mapを構築 ──────────────────────────────
+    # merge_map[(r,c)] = (master_r, master_c, row_span, col_span)
+    merge_map: dict[tuple, tuple] = {}
+
+    for r_idx, row in enumerate(tbl.rows):
+        for c_idx, cell in enumerate(row.cells):
+            tc   = cell._tc
+            tcPr = tc.find(qn("a:tcPr"))
+
+            # rowSpan / gridSpan を直接属性から読む（パターンA対応）
+            row_span  = int(tc.get("rowSpan",  1))  # <a:tc rowSpan="7">
+            grid_span = int(tc.get("gridSpan", 1))  # <a:tc gridSpan="3">
+
+            # tcPr 内の属性も確認（パターンB対応）
+            if tcPr is not None:
+                row_span  = max(row_span,  int(tcPr.get("rowSpan",  1)))
+                grid_span = max(grid_span, int(tcPr.get("gridSpan", 1)))
+
+            if row_span > 1 or grid_span > 1:
+                # この (r,c) が母セル → 覆う範囲の影子セルを登録
+                for dr in range(row_span):
+                    for dc in range(grid_span):
+                        if dr == 0 and dc == 0:
+                            continue  # 母セル自身はスキップ
+                        merge_map[(r_idx + dr, c_idx + dc)] = (
+                            r_idx, c_idx, row_span, grid_span
+                        )
+
+    # ── Step2: vMerge/hMerge タグでも補完（パターンB） ──────────
+    for r_idx, row in enumerate(tbl.rows):
+        for c_idx, cell in enumerate(row.cells):
+            if (r_idx, c_idx) in merge_map:
+                continue
+            tc   = cell._tc
+            tcPr = tc.find(qn("a:tcPr"))
+            if tcPr is None:
+                continue
+            is_v = tcPr.find(qn("a:vMerge")) is not None
+            is_h = tcPr.find(qn("a:hMerge")) is not None
+            if not (is_v or is_h):
+                continue
+            # 上/左へ遡って母セルを探す
+            mr, mc = r_idx, c_idx
+            if is_v:
+                for r in range(r_idx - 1, -1, -1):
+                    prev_tcPr = tbl.rows[r].cells[c_idx]._tc.find(qn("a:tcPr"))
+                    if prev_tcPr is None or prev_tcPr.find(qn("a:vMerge")) is None:
+                        mr = r
+                        break
+            if is_h:
+                for c in range(c_idx - 1, -1, -1):
+                    prev_tcPr = tbl.rows[r_idx].cells[c]._tc.find(qn("a:tcPr"))
+                    if prev_tcPr is None or prev_tcPr.find(qn("a:hMerge")) is None:
+                        mc = c
+                        break
+            # 母セルのspan取得
+            m_tc   = tbl.rows[mr].cells[mc]._tc
+            m_tcPr = m_tc.find(qn("a:tcPr"))
+            rs = max(int(m_tc.get("rowSpan", 1)),
+                     int(m_tcPr.get("rowSpan", 1) if m_tcPr is not None else 1))
+            gs = max(int(m_tc.get("gridSpan", 1)),
+                     int(m_tcPr.get("gridSpan", 1) if m_tcPr is not None else 1))
+            merge_map[(r_idx, c_idx)] = (mr, mc, rs, gs)
+
+    # ── Step3: 各セルを出力 ────────────────────────────────────
+    def parse_cell(cell, r_idx: int, c_idx: int) -> dict:
+        cell_info: dict[str, Any] = {"row": r_idx, "col": c_idx}
+
+        # 影子セルか？
+        if (r_idx, c_idx) in merge_map:
+            mr, mc, rs, gs = merge_map[(r_idx, c_idx)]
+            cell_info["col_span"]    = 1
+            cell_info["row_span"]    = 1
+            cell_info["master_cell"] = {"row": mr, "col": mc}
+            cell_info["content"]     = []
+            return cell_info
+
+        # 母セルまたは独立セル
+        tc   = cell._tc
+        tcPr = tc.find(qn("a:tcPr"))
+
+        row_span  = max(int(tc.get("rowSpan",  1)),
+                        int(tcPr.get("rowSpan",  1) if tcPr is not None else 1))
+        grid_span = max(int(tc.get("gridSpan", 1)),
+                        int(tcPr.get("gridSpan", 1) if tcPr is not None else 1))
+
+        cell_info["col_span"] = grid_span
+        cell_info["row_span"] = row_span
+
+        left   = table_left + sum(col_widths[:c_idx])
+        top    = table_top  + sum(row_heights[:r_idx])
+        width  = sum(col_widths[c_idx  : c_idx  + grid_span])
+        height = sum(row_heights[r_idx : r_idx  + row_span])
+
+        # height=0 フォールバック（自動調整行対策）
+        if height == 0:
+            height = 457200  # ≈ 36pt デフォルト
+
+        cell_info["bbox"] = {
+            "left":   emu_to_pt(left),
+            "top":    emu_to_pt(top),
+            "width":  emu_to_pt(width),
+            "height": emu_to_pt(height),
+        }
+
+        try:
+            paras = parse_text_frame(cell.text_frame)
+            cell_info["content"] = paras if paras else []
+        except Exception:
+            cell_info["content"] = []
+
+        return cell_info
+
+    for r_idx, row in enumerate(tbl.rows):
+        row_data = []
+        for c_idx, cell in enumerate(row.cells):
+            row_data.append(parse_cell(cell, r_idx, c_idx))
+        info["rows"].append(row_data)
+
+    return info
