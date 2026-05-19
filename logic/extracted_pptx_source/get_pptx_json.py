@@ -183,9 +183,7 @@ def parse_connector(shape, shape_id_map: dict) -> dict:
 
 
 # ─────────────────────────── 表格解析 ───────────────────────────
-
 def parse_table(shape) -> dict:
-    """解析表格形状"""
     info: dict[str, Any] = {
         "id":   shape.shape_id,
         "name": shape.name,
@@ -194,92 +192,84 @@ def parse_table(shape) -> dict:
         "rows": [],
     }
     tbl = shape.table
-    info["row_count"] = tbl.rows._tr_lst.__len__() if hasattr(tbl.rows, "_tr_lst") else len(list(tbl.rows))
-    info["col_count"] = tbl.columns._tr_lst.__len__() if hasattr(tbl.columns, "_tr_lst") else len(list(tbl.columns))
+    info["row_count"] = len(list(tbl.rows))
+    info["col_count"] = len(list(tbl.columns))
 
     col_widths = [col.width for col in tbl.columns]
     row_heights = [row.height for row in tbl.rows]
     table_left = shape.left
     table_top = shape.top
 
+    def find_master(r_idx, c_idx, direction):
+        """向上(v)或向左(h)找母单元格行/列索引"""
+        if direction == "v":
+            r = r_idx
+            while r > 0:
+                r -= 1  # ← 先减，再判断
+                tc = tbl.rows[r].cells[c_idx]._tc
+                tcPr = tc.find(qn("a:tcPr"))
+                # 没有 vMerge 说明这行就是母单元格
+                if tcPr is None or tcPr.find(qn("a:vMerge")) is None:
+                    return r
+            return 0
+        else:  # direction == "h"
+            c = c_idx
+            while c > 0:
+                c -= 1
+                tc = tbl.rows[r_idx].cells[c]._tc
+                tcPr = tc.find(qn("a:tcPr"))
+                if tcPr is None or tcPr.find(qn("a:hMerge")) is None:
+                    return c
+            return 0
+
     def parse_cell(cell, r_idx: int, c_idx: int) -> dict:
         cell_info: dict[str, Any] = {"row": r_idx, "col": c_idx}
         tc = cell._tc
         tcPr = tc.find(qn("a:tcPr"))
 
-        # 1. 检查当前单元格自身声明的跨度（如果是母单元格的话）
         grid_span = 1
         row_span = 1
-        if tcPr is not None:
-            grid_span = int(tcPr.get("gridSpan", 1))
-            row_span = int(tcPr.get("rowSpan", 1))
+        is_v_placeholder = tcPr is not None and tcPr.find(qn("a:vMerge")) is not None
+        is_h_placeholder = tcPr is not None and tcPr.find(qn("a:hMerge")) is not None
 
-        # 2. 判断当前单元格是否是“影子单元格”（被别人合并进去的）
-        is_v_placeholder = False
-        is_h_placeholder = False
-        if tcPr is not None:
-            if tcPr.find(qn("a:vMerge")) is not None:
-                is_v_placeholder = True
-            if tcPr.find(qn("a:hMerge")) is not None:
-                is_h_placeholder = True
-
-        # 3. 如果是影子单元格，我们需要逆向追溯它的“亲生父母（母单元格）”
         if is_v_placeholder or is_h_placeholder:
-            cell_info["merged"] = True
-            
-            # 向上/向左寻找真正的母单元格坐标
+            # 影子单元格：找到母单元格，记录引用，内容置空
             master_r = r_idx
             master_c = c_idx
-            
             if is_v_placeholder:
-                # 垂直合并：往上找第一张没有 vMerge 或者 vMerge 没有 val="true"（或者看具体结构）的行
-                # 在 PPTX 中，通常被垂直吞掉的行，其 tcPr 里都有 <a:vMerge/> 标签
-                while master_r > 0:
-                    prev_tc = tbl.rows[master_r - 1].cells[c_idx]._tc
-                    prev_tcPr = prev_tc.find(qn("a:tcPr"))
-                    # 如果上一行的单元格没有 vMerge，说明上一行就是母单元格所在的起点
-                    if prev_tcPr is None or prev_tcPr.find(qn("a:vMerge")) is None:
-                        master_r -= 1
-                        break
-                    master_r -= 1
-            
+                master_r = find_master(r_idx, c_idx, "v")
             if is_h_placeholder:
-                # 水平合并：同理向左追溯
-                while master_c > 0:
-                    prev_tc = tbl.rows[r_idx].cells[master_c - 1]._tc
-                    prev_tcPr = prev_tc.find(qn("a:tcPr"))
-                    if prev_tcPr is None or prev_tcPr.find(qn("a:hMerge")) is None:
-                        master_c -= 1
-                        break
-                    master_c -= 1
-            
-            # 找到了母单元格，读取母单元格上真正定义的跨度
+                master_c = find_master(r_idx, master_c, "h")
+
             master_tc = tbl.rows[master_r].cells[master_c]._tc
             master_tcPr = master_tc.find(qn("a:tcPr"))
             if master_tcPr is not None:
                 grid_span = int(master_tcPr.get("gridSpan", 1))
-                row_span = int(master_tcPr.get("rowSpan", 1))
-            
-            cell_info["col_span"] = grid_span
-            cell_info["row_span"] = row_span
+                row_span  = int(master_tcPr.get("rowSpan",  1))
+
+            cell_info["col_span"]   = grid_span
+            cell_info["row_span"]   = row_span
             cell_info["master_cell"] = {"row": master_r, "col": master_c}
-            cell_info["content"] = []  # 影子单元格内容置空，防止 LLM 重复读取
+            cell_info["content"]    = []
             return cell_info
 
-        # 4. 如果走到这里，说明是独立单元格，或者是合并区域的“母单元格”
+        # 母单元格或独立单元格
+        if tcPr is not None:
+            grid_span = int(tcPr.get("gridSpan", 1))
+            row_span  = int(tcPr.get("rowSpan",  1))
+
         cell_info["col_span"] = grid_span
         cell_info["row_span"] = row_span
 
-        # 计算真实覆盖区域的边界框
-        left = table_left + sum(col_widths[:c_idx])
-        top = table_top + sum(row_heights[:r_idx])
-        width = sum(col_widths[c_idx:c_idx + grid_span])
-        height = sum(row_heights[r_idx:r_idx + row_span])
-        
+        left   = table_left + sum(col_widths[:c_idx])
+        top    = table_top  + sum(row_heights[:r_idx])
+        width  = sum(col_widths[c_idx  : c_idx  + grid_span])
+        height = sum(row_heights[r_idx : r_idx  + row_span])
+
         cell_info["bbox"] = {
-            "left": emu_to_pt(left),
-            "top": emu_to_pt(top),
-            "width": emu_to_pt(width),
+            "left":   emu_to_pt(left),
+            "top":    emu_to_pt(top),
+            "width":  emu_to_pt(width),
             "height": emu_to_pt(height),
         }
 
@@ -292,7 +282,7 @@ def parse_table(shape) -> dict:
         return cell_info
 
     for r_idx, row in enumerate(tbl.rows):
-        row_data: list[dict] = []
+        row_data = []
         for c_idx, cell in enumerate(row.cells):
             row_data.append(parse_cell(cell, r_idx, c_idx))
         info["rows"].append(row_data)
