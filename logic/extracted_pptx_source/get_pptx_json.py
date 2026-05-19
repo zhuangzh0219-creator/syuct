@@ -227,36 +227,24 @@ def parse_table(shape) -> dict:
         tc = cell._tc
         tcPr = tc.find(qn("a:tcPr"))
 
-        grid_span = 1
-        row_span = 1
         is_v_placeholder = tcPr is not None and tcPr.find(qn("a:vMerge")) is not None
         is_h_placeholder = tcPr is not None and tcPr.find(qn("a:hMerge")) is not None
 
         if is_v_placeholder or is_h_placeholder:
-            # 影子单元格：找到母单元格，记录引用，内容置空
-            master_r = r_idx
-            master_c = c_idx
-            if is_v_placeholder:
-                master_r = find_master(r_idx, c_idx, "v")
-            if is_h_placeholder:
-                master_c = find_master(r_idx, master_c, "h")
+            # 影子セル: master_cell を記録して内容は空
+            master_r = find_master(r_idx, c_idx, "v") if is_v_placeholder else r_idx
+            master_c = find_master(r_idx, master_c if is_h_placeholder else c_idx, "h") if is_h_placeholder else c_idx
+            return {
+                "row": r_idx, "col": c_idx,
+                "col_span": 1, "row_span": 1,
+                "master_cell": {"row": master_r, "col": master_c},
+                "content": []
+            }
 
-            master_tc = tbl.rows[master_r].cells[master_c]._tc
-            master_tcPr = master_tc.find(qn("a:tcPr"))
-            if master_tcPr is not None:
-                grid_span = int(master_tcPr.get("gridSpan", 1))
-                row_span  = int(master_tcPr.get("rowSpan",  1))
 
-            cell_info["col_span"]   = grid_span
-            cell_info["row_span"]   = row_span
-            cell_info["master_cell"] = {"row": master_r, "col": master_c}
-            cell_info["content"]    = []
-            return cell_info
-
-        # 母单元格或独立单元格
-        if tcPr is not None:
-            grid_span = int(tcPr.get("gridSpan", 1))
-            row_span  = int(tcPr.get("rowSpan",  1))
+        # 母セルまたは独立セル: XML から span を直接読む
+        grid_span = int(tcPr.get("gridSpan", 1)) if tcPr is not None else 1
+        row_span  = int(tcPr.get("rowSpan",  1)) if tcPr is not None else 1
 
         cell_info["col_span"] = grid_span
         cell_info["row_span"] = row_span
