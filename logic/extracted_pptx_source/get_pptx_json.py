@@ -204,44 +204,52 @@ def parse_table(shape) -> dict:
 
     def parse_cell(cell, r_idx: int, c_idx: int) -> dict:
         cell_info: dict[str, Any] = {"row": r_idx, "col": c_idx}
-        tc = cell._tc
-        tcPr = tc.find(qn("a:tcPr"))
-
-        grid_span = 1
-        row_span = 1
-        if tcPr is not None:
-            grid_span = int(tcPr.get("gridSpan", 1))
-            row_span = int(tcPr.get("rowSpan", 1))
-
-        cell_info["col_span"] = grid_span
-        cell_info["row_span"] = row_span
-
-        # 识别跨行/跨列的占位单元格
-        merged_placeholder = False
-        if tcPr is not None:
-            if tcPr.find(qn("a:hMerge")) is not None or tcPr.find(qn("a:vMerge")) is not None:
-                if grid_span == 1 and row_span == 1:
-                    merged_placeholder = True
-                    cell_info["merged"] = True
-
-        if not merged_placeholder:
-            left = table_left + sum(col_widths[:c_idx])
-            top = table_top + sum(row_heights[:r_idx])
-            width = sum(col_widths[c_idx:c_idx + grid_span])
-            height = sum(row_heights[r_idx:r_idx + row_span])
-            cell_info["bbox"] = {
-                "left": emu_to_pt(left),
-                "top": emu_to_pt(top),
-                "width": emu_to_pt(width),
-                "height": emu_to_pt(height),
-            }
-
-            try:
-                paras = parse_text_frame(cell.text_frame)
-                cell_info["content"] = paras if paras else []
-            except Exception:
-                cell_info["content"] = []
+        
+        # ── 核心修正：利用 python-pptx 自带的合并判断 ──
+        if cell.is_merged:
+            # 找到当前单元格所属的合并区域左上角母单元格
+            master_cell = cell._tc.get_top_left_cell()
+            master_row = master_cell.row_idx
+            master_col = master_cell.col_idx
+            
+            # 读取母单元格的真实合并跨度
+            tcPr = master_cell.find(qn("a:tcPr"))
+            grid_span = int(tcPr.get("gridSpan", 1)) if tcPr is not None else 1
+            row_span = int(tcPr.get("rowSpan", 1)) if tcPr is not None else 1
+            
+            cell_info["col_span"] = grid_span
+            cell_info["row_span"] = row_span
+            
+            # 如果当前检查的单元格不是母单元格，说明它是“影子占位单元格”
+            if r_idx != master_row or c_idx != master_col:
+                cell_info["merged"] = True
+                cell_info["master_cell"] = {"row": master_row, "col": master_col}
+                cell_info["content"] = []  # 影子单元格不重复提取内容
+                return cell_info
         else:
+            # 非合并单元格，跨度均为 1
+            grid_span = 1
+            row_span = 1
+            cell_info["col_span"] = 1
+            cell_info["row_span"] = 1
+
+        # ── 计算有效单元格（独立单元格 或 合并区域的母单元格）的物理 BBox ──
+        left = table_left + sum(col_widths[:c_idx])
+        top = table_top + sum(row_heights[:r_idx])
+        width = sum(col_widths[c_idx:c_idx + grid_span])
+        height = sum(row_heights[r_idx:r_idx + row_span])
+        
+        cell_info["bbox"] = {
+            "left": emu_to_pt(left),
+            "top": emu_to_pt(top),
+            "width": emu_to_pt(width),
+            "height": emu_to_pt(height),
+        }
+
+        try:
+            paras = parse_text_frame(cell.text_frame)
+            cell_info["content"] = paras if paras else []
+        except Exception:
             cell_info["content"] = []
 
         return cell_info
@@ -642,19 +650,10 @@ def to_markdown_summary(data: dict) -> str:
 
 # ─────────────────────────── CLI ───────────────────────────
 
-def get_pptx_source(pptx_path: str, output_md: str = "./pptx_summary.md") -> dict:
+def get_pptx_source(output_md: str = "./pptx_summary.md") -> dict:
+    pptx_path = "C:/Users/tR16277/Desktop/work/work06/file/a.pptx"
     data = parse_pptx(pptx_path)
     r = to_markdown_summary(data)
     with open(output_md, "w", encoding="utf-8") as f:
         f.write(r)
     return data
-
-
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: python get_pptx_json.py <pptx_path> [output_md]")
-        sys.exit(1)
-
-    pptx_path = sys.argv[1]
-    output_md = sys.argv[2] if len(sys.argv) > 2 else "./pptx_summary.md"
-    get_pptx_source(pptx_path, output_md)
