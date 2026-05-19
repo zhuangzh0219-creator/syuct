@@ -204,36 +204,73 @@ def parse_table(shape) -> dict:
 
     def parse_cell(cell, r_idx: int, c_idx: int) -> dict:
         cell_info: dict[str, Any] = {"row": r_idx, "col": c_idx}
-        
-        # ── 核心修正：利用 python-pptx 自带的合并判断 ──
-        if cell.is_merged:
-            # 找到当前单元格所属的合并区域左上角母单元格
-            master_cell = cell._tc.get_top_left_cell()
-            master_row = master_cell.row_idx
-            master_col = master_cell.col_idx
+        tc = cell._tc
+        tcPr = tc.find(qn("a:tcPr"))
+
+        # 1. 检查当前单元格自身声明的跨度（如果是母单元格的话）
+        grid_span = 1
+        row_span = 1
+        if tcPr is not None:
+            grid_span = int(tcPr.get("gridSpan", 1))
+            row_span = int(tcPr.get("rowSpan", 1))
+
+        # 2. 判断当前单元格是否是“影子单元格”（被别人合并进去的）
+        is_v_placeholder = False
+        is_h_placeholder = False
+        if tcPr is not None:
+            if tcPr.find(qn("a:vMerge")) is not None:
+                is_v_placeholder = True
+            if tcPr.find(qn("a:hMerge")) is not None:
+                is_h_placeholder = True
+
+        # 3. 如果是影子单元格，我们需要逆向追溯它的“亲生父母（母单元格）”
+        if is_v_placeholder or is_h_placeholder:
+            cell_info["merged"] = True
             
-            # 读取母单元格的真实合并跨度
-            tcPr = master_cell.find(qn("a:tcPr"))
-            grid_span = int(tcPr.get("gridSpan", 1)) if tcPr is not None else 1
-            row_span = int(tcPr.get("rowSpan", 1)) if tcPr is not None else 1
+            # 向上/向左寻找真正的母单元格坐标
+            master_r = r_idx
+            master_c = c_idx
+            
+            if is_v_placeholder:
+                # 垂直合并：往上找第一张没有 vMerge 或者 vMerge 没有 val="true"（或者看具体结构）的行
+                # 在 PPTX 中，通常被垂直吞掉的行，其 tcPr 里都有 <a:vMerge/> 标签
+                while master_r > 0:
+                    prev_tc = tbl.rows[master_r - 1].cells[c_idx]._tc
+                    prev_tcPr = prev_tc.find(qn("a:tcPr"))
+                    # 如果上一行的单元格没有 vMerge，说明上一行就是母单元格所在的起点
+                    if prev_tcPr is None or prev_tcPr.find(qn("a:vMerge")) is None:
+                        master_r -= 1
+                        break
+                    master_r -= 1
+            
+            if is_h_placeholder:
+                # 水平合并：同理向左追溯
+                while master_c > 0:
+                    prev_tc = tbl.rows[r_idx].cells[master_c - 1]._tc
+                    prev_tcPr = prev_tc.find(qn("a:tcPr"))
+                    if prev_tcPr is None or prev_tcPr.find(qn("a:hMerge")) is None:
+                        master_c -= 1
+                        break
+                    master_c -= 1
+            
+            # 找到了母单元格，读取母单元格上真正定义的跨度
+            master_tc = tbl.rows[master_r].cells[master_c]._tc
+            master_tcPr = master_tc.find(qn("a:tcPr"))
+            if master_tcPr is not None:
+                grid_span = int(master_tcPr.get("gridSpan", 1))
+                row_span = int(master_tcPr.get("rowSpan", 1))
             
             cell_info["col_span"] = grid_span
             cell_info["row_span"] = row_span
-            
-            # 如果当前检查的单元格不是母单元格，说明它是“影子占位单元格”
-            if r_idx != master_row or c_idx != master_col:
-                cell_info["merged"] = True
-                cell_info["master_cell"] = {"row": master_row, "col": master_col}
-                cell_info["content"] = []  # 影子单元格不重复提取内容
-                return cell_info
-        else:
-            # 非合并单元格，跨度均为 1
-            grid_span = 1
-            row_span = 1
-            cell_info["col_span"] = 1
-            cell_info["row_span"] = 1
+            cell_info["master_cell"] = {"row": master_r, "col": master_c}
+            cell_info["content"] = []  # 影子单元格内容置空，防止 LLM 重复读取
+            return cell_info
 
-        # ── 计算有效单元格（独立单元格 或 合并区域的母单元格）的物理 BBox ──
+        # 4. 如果走到这里，说明是独立单元格，或者是合并区域的“母单元格”
+        cell_info["col_span"] = grid_span
+        cell_info["row_span"] = row_span
+
+        # 计算真实覆盖区域的边界框
         left = table_left + sum(col_widths[:c_idx])
         top = table_top + sum(row_heights[:r_idx])
         width = sum(col_widths[c_idx:c_idx + grid_span])
