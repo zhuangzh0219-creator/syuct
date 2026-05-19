@@ -207,18 +207,15 @@ def parse_table(shape) -> dict:
             while r > 0:
                 r -= 1  # ← 先减，再判断
                 tc = tbl.rows[r].cells[c_idx]._tc
-                tcPr = tc.find(qn("a:tcPr"))
-                # 没有 vMerge 说明这行就是母单元格
-                if tcPr is None or tcPr.find(qn("a:vMerge")) is None:
+                if tc.get("vMerge") is None:
                     return r
             return 0
-        else:  # direction == "h"
+        else:
             c = c_idx
             while c > 0:
                 c -= 1
                 tc = tbl.rows[r_idx].cells[c]._tc
-                tcPr = tc.find(qn("a:tcPr"))
-                if tcPr is None or tcPr.find(qn("a:hMerge")) is None:
+                if tc.get("hMerge") is None:
                     return c
             return 0
 
@@ -227,13 +224,13 @@ def parse_table(shape) -> dict:
         tc = cell._tc
         tcPr = tc.find(qn("a:tcPr"))
 
-        is_v_placeholder = tcPr is not None and tcPr.find(qn("a:vMerge")) is not None
-        is_h_placeholder = tcPr is not None and tcPr.find(qn("a:hMerge")) is not None
+        is_v_placeholder = tc.get("vMerge") is not None
+        is_h_placeholder = tc.get("hMerge") is not None
 
         if is_v_placeholder or is_h_placeholder:
             # 影子セル: master_cell を記録して内容は空
             master_r = find_master(r_idx, c_idx, "v") if is_v_placeholder else r_idx
-            master_c = find_master(r_idx, master_c if is_h_placeholder else c_idx, "h") if is_h_placeholder else c_idx
+            master_c = find_master(r_idx, c_idx, "h") if is_h_placeholder else c_idx
             return {
                 "row": r_idx, "col": c_idx,
                 "col_span": 1, "row_span": 1,
@@ -243,8 +240,8 @@ def parse_table(shape) -> dict:
 
 
         # 母セルまたは独立セル: XML から span を直接読む
-        grid_span = int(tcPr.get("gridSpan", 1)) if tcPr is not None else 1
-        row_span  = int(tcPr.get("rowSpan",  1)) if tcPr is not None else 1
+        grid_span = int(tc.get("gridSpan", 1))
+        row_span  = int(tc.get("rowSpan",  1))
 
         cell_info["col_span"] = grid_span
         cell_info["row_span"] = row_span
@@ -253,6 +250,9 @@ def parse_table(shape) -> dict:
         top    = table_top  + sum(row_heights[:r_idx])
         width  = sum(col_widths[c_idx  : c_idx  + grid_span])
         height = sum(row_heights[r_idx : r_idx  + row_span])
+
+        if height == 0:
+            height = 457200 
 
         cell_info["bbox"] = {
             "left":   emu_to_pt(left),
