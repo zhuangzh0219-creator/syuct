@@ -14,15 +14,11 @@ PPTX → Structured JSON Parser
 
 import sys
 import json
-import math
 from pathlib import Path
 from typing import Any
 from pptx import Presentation
-from pptx.util import Emu
 from pptx.enum.shapes import MSO_SHAPE_TYPE
-from pptx.dml.color import RGBColor
 from pptx.oxml.ns import qn
-from lxml import etree
 
 
 # ─────────────────────────── 工具函数 ─────────────────────────── 
@@ -201,26 +197,59 @@ def parse_table(shape) -> dict:
     info["row_count"] = tbl.rows._tr_lst.__len__() if hasattr(tbl.rows, "_tr_lst") else len(list(tbl.rows))
     info["col_count"] = tbl.columns._tr_lst.__len__() if hasattr(tbl.columns, "_tr_lst") else len(list(tbl.columns))
 
+    col_widths = [col.width for col in tbl.columns]
+    row_heights = [row.height for row in tbl.rows]
+    table_left = shape.left
+    table_top = shape.top
+
+    def parse_cell(cell, r_idx: int, c_idx: int) -> dict:
+        cell_info: dict[str, Any] = {"row": r_idx, "col": c_idx}
+        tc = cell._tc
+        tcPr = tc.find(qn("a:tcPr"))
+
+        grid_span = 1
+        row_span = 1
+        if tcPr is not None:
+            grid_span = int(tcPr.get("gridSpan", 1))
+            row_span = int(tcPr.get("rowSpan", 1))
+
+        cell_info["col_span"] = grid_span
+        cell_info["row_span"] = row_span
+
+        # 识别跨行/跨列的占位单元格
+        merged_placeholder = False
+        if tcPr is not None:
+            if tcPr.find(qn("a:hMerge")) is not None or tcPr.find(qn("a:vMerge")) is not None:
+                if grid_span == 1 and row_span == 1:
+                    merged_placeholder = True
+                    cell_info["merged"] = True
+
+        if not merged_placeholder:
+            left = table_left + sum(col_widths[:c_idx])
+            top = table_top + sum(row_heights[:r_idx])
+            width = sum(col_widths[c_idx:c_idx + grid_span])
+            height = sum(row_heights[r_idx:r_idx + row_span])
+            cell_info["bbox"] = {
+                "left": emu_to_pt(left),
+                "top": emu_to_pt(top),
+                "width": emu_to_pt(width),
+                "height": emu_to_pt(height),
+            }
+
+            try:
+                paras = parse_text_frame(cell.text_frame)
+                cell_info["content"] = paras if paras else []
+            except Exception:
+                cell_info["content"] = []
+        else:
+            cell_info["content"] = []
+
+        return cell_info
+
     for r_idx, row in enumerate(tbl.rows):
         row_data: list[dict] = []
         for c_idx, cell in enumerate(row.cells):
-            cell_info: dict[str, Any] = {"row": r_idx, "col": c_idx}
-            # 合并单元格
-            tc = cell._tc
-            rs = int(tc.get("rowSpan", 1))
-            cs = int(tc.get("gridSpan", 1))
-            if rs > 1: cell_info["row_span"] = rs
-            if cs > 1: cell_info["col_span"] = cs
-            # 文本
-            try:
-                paras = parse_text_frame(cell.text_frame)
-                if paras:
-                    cell_info["content"] = paras
-                else:
-                    cell_info["content"] = []
-            except Exception:
-                cell_info["content"] = []
-            row_data.append(cell_info)
+            row_data.append(parse_cell(cell, r_idx, c_idx))
         info["rows"].append(row_data)
     return info
 
@@ -354,12 +383,6 @@ def parse_shape(shape) -> dict:
         "bbox": bbox(shape),
     }
     geom = get_shape_geometry(shape)
-    if geom:
-        info["geometry"] = geom
-
-        adjustments = get_shape_adjustments(shape)
-        if adjustments:
-            info["adjustments"] = adjustments
     if geom:
         info["geometry"] = geom
 
@@ -619,10 +642,19 @@ def to_markdown_summary(data: dict) -> str:
 
 # ─────────────────────────── CLI ───────────────────────────
 
-def get_pptx_source():
-    pptx_path = "C:/Users/tR16277/Desktop/work/work06/file/a.pptx"
+def get_pptx_source(pptx_path: str, output_md: str = "./pptx_summary.md") -> dict:
     data = parse_pptx(pptx_path)
     r = to_markdown_summary(data)
-    with open("./pptx_summary.md", "w", encoding="utf-8") as f:
+    with open(output_md, "w", encoding="utf-8") as f:
         f.write(r)
     return data
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python get_pptx_json.py <pptx_path> [output_md]")
+        sys.exit(1)
+
+    pptx_path = sys.argv[1]
+    output_md = sys.argv[2] if len(sys.argv) > 2 else "./pptx_summary.md"
+    get_pptx_source(pptx_path, output_md)
