@@ -183,6 +183,14 @@ def parse_connector(shape, shape_id_map: dict) -> dict:
 
 
 # ─────────────────────────── 表格解析 ───────────────────────────
+def is_hidden_merge_cell(cell):
+    tc = cell._tc
+
+    return (
+        tc.get("hMerge") is not None
+        or tc.get("vMerge") is not None
+    )
+
 def parse_table(shape) -> dict:
     info: dict[str, Any] = {
         "id":   shape.shape_id,
@@ -195,8 +203,12 @@ def parse_table(shape) -> dict:
     info["row_count"] = len(list(tbl.rows))
     info["col_count"] = len(list(tbl.columns))
 
-    col_widths = [col.width for col in tbl.columns]
-    row_heights = [row.height for row in tbl.rows]
+    raw_col_widths = [col.width for col in tbl.columns]
+    raw_row_heights = [row.height for row in tbl.rows]
+    scale_x = shape.width / sum(raw_col_widths)
+    scale_y = shape.height / sum(raw_row_heights)
+    col_widths = [w * scale_x for w in raw_col_widths]
+    row_heights = [h * scale_y for h in raw_row_heights]
     table_left = shape.left
     table_top = shape.top
 
@@ -222,7 +234,6 @@ def parse_table(shape) -> dict:
     def parse_cell(cell, r_idx: int, c_idx: int) -> dict:
         cell_info: dict[str, Any] = {"row": r_idx, "col": c_idx}
         tc = cell._tc
-        tcPr = tc.find(qn("a:tcPr"))
 
         is_v_placeholder = tc.get("vMerge") is not None
         is_h_placeholder = tc.get("hMerge") is not None
@@ -238,7 +249,6 @@ def parse_table(shape) -> dict:
                 "content": []
             }
 
-
         # 母セルまたは独立セル: XML から span を直接読む
         grid_span = int(tc.get("gridSpan", 1))
         row_span  = int(tc.get("rowSpan",  1))
@@ -250,9 +260,6 @@ def parse_table(shape) -> dict:
         top    = table_top  + sum(row_heights[:r_idx])
         width  = sum(col_widths[c_idx  : c_idx  + grid_span])
         height = sum(row_heights[r_idx : r_idx  + row_span])
-
-        if height == 0:
-            height = 457200 
 
         cell_info["bbox"] = {
             "left":   emu_to_pt(left),
@@ -272,6 +279,9 @@ def parse_table(shape) -> dict:
     for r_idx, row in enumerate(tbl.rows):
         row_data = []
         for c_idx, cell in enumerate(row.cells):
+            if is_hidden_merge_cell(cell):
+                # 跳过被合并隐藏的单元格
+                continue
             row_data.append(parse_cell(cell, r_idx, c_idx))
         info["rows"].append(row_data)
     return info
