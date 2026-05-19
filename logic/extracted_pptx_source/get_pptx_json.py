@@ -67,45 +67,40 @@ def parse_run(run) -> dict | None:
     if rPr is not None:
         s_val = rPr.get("strike", "noStrike")
         strike = s_val not in ("noStrike", "")
-
-    if strike: result["strikethrough"] = True
+    if strike:
+        result["strikethrough"] = True
     # ── 粗体 / 斜体 ── 
     font = run.font
     if font.bold:
         result["bold"] = True
-    
     if font.italic:
         result["italic"] = True
-
     return result
 
 
 def parse_paragraph(para) -> dict | None:
     """解析段落，返回 runs 列表 + 对齐信息"""
     runs = [r for r in (parse_run(run) for run in para.runs) if r]
-    # 合并相邻无特殊属性的 run 
+    # 合并相邻无特殊属性的 run
     merged: list[dict] = []
     for r in runs:
         if merged and set(merged[-1].keys()) == {"text"} and set(r.keys()) == {"text"}:
             merged[-1]["text"] += r["text"]
         else:
             merged.append(r)
-
     if not merged:
         return None
-    
     result: dict[str, Any] = {"runs": merged}
     align = para.alignment
     if align is not None:
         result["align"] = str(align).split(".")[-1].lower()
-    
     return result
 
 
 def parse_text_frame(tf) -> list[dict]:
     """解析文本框，返回段落列表（保留删除线，忽略颜色）"""
     paras = [p for p in (parse_paragraph(para) for para in tf.paragraphs) if p]
-    return paras 
+    return paras
 
 
 def text_plain(tf) -> str:
@@ -124,8 +119,8 @@ def is_connector(shape) -> bool:
     try:
         st = shape.shape_type 
         # MSO_SHAPE_TYPE.LINE = 9
-        if st == MSO_SHAPE_TYPE.LINE: 
-            return True 
+        if st == MSO_SHAPE_TYPE.LINE:
+            return True
     except Exception:
         pass
     # 通过 XML tag 判断
@@ -141,8 +136,8 @@ def is_connector(shape) -> bool:
             geom = sp_pr.find(qn("a:prstGeom"))
             if geom is not None:
                 prst = geom.get("prst", "")
-                if "Arrow" in prst or prst in ("line", "straightConnector1", 
-                                               "bentConnector2", "bentConnector3", 
+                if "Arrow" in prst or prst in ("line", "straightConnector1",
+                                               "bentConnector2", "bentConnector3",
                                                "curvedConnector2", "curvedConnector3"):
                     return True
     except Exception:
@@ -153,9 +148,9 @@ def is_connector(shape) -> bool:
 def parse_connector(shape, shape_id_map: dict) -> dict:
     """解析连接线，提取起点/终点形状引用"""
     info: dict[str, Any] = {
-        "id":   shape.shape_id, 
-        "name": shape.name, 
-        "type": "connector", 
+        "id":   shape.shape_id,
+        "name": shape.name,
+        "type": "connector",
         "bbox": bbox(shape),
     }
     # 解析 XML 中的 stCxn / endCxn 连接关系
@@ -165,11 +160,11 @@ def parse_connector(shape, shape_id_map: dict) -> dict:
         if cxn is not None:
             sid = int(cxn.get("id", 0))
             info[key] = {
-                "shape_id": sid, 
-                "shape_name": shape_id_map.get(sid, {}).get("name"), 
-                "idx": int(cxn.get("idx", 0)), 
+                "shape_id": sid,
+                "shape_name": shape_id_map.get(sid, {}).get("name"),
+                "idx": int(cxn.get("idx", 0)),
             }
-    # 箭头方向（从 ln 标签读取） 
+    # 箭头方向（从 ln 标签读取）
     arrow_info: dict[str, str] = {}
     for end, tag in [("tail", "a:tailEnd"), ("head", "a:headEnd")]:
         ae = elem.find(".//" + qn(tag))
@@ -179,9 +174,9 @@ def parse_connector(shape, shape_id_map: dict) -> dict:
                 arrow_info[end] = t
     if arrow_info:
         info["arrows"] = arrow_info
-    # 文本（连接线偶尔有标注文字） 
+    # 文本（连接线偶尔有标注文字）
     try:
-        if shape.has_text_frame: 
+        if shape.has_text_frame:
             txt = text_plain(shape.text_frame).strip()
             if txt:
                 info["label"] = txt
@@ -237,7 +232,7 @@ def parse_picture(shape) -> dict:
         "id":   shape.shape_id,
         "name": shape.name,
         "type": "picture",
-        "bbox": bbox(shape), 
+        "bbox": bbox(shape),
     }
     try:
         img = shape.image
@@ -251,7 +246,7 @@ def parse_picture(shape) -> dict:
         desc = shape._element.find(".//" + qn("p:nvPicPr"))
         if desc is not None:
             nvpr = desc.find(qn("p:nvPr"))
-            if nvpr is not None: 
+            if nvpr is not None:
                 ph = nvpr.find(qn("p:ph"))
                 if ph is None:
                     # 尝试 cNvPr descr
@@ -273,10 +268,10 @@ def get_shape_geometry(shape) -> str | None:
         sp_pr = shape._element.find(".//" + qn("p:spPr"))
         if sp_pr is None:
             sp_pr = shape._element.find(qn("p:spPr"))
-            if sp_pr is not None:
-                geom = sp_pr.find(qn("a:prstGeom"))
-                if geom is not None:
-                    return geom.get("prst")
+        if sp_pr is not None:
+            geom = sp_pr.find(qn("a:prstGeom"))
+            if geom is not None:
+                return geom.get("prst")
     except Exception:
         pass
     return None
@@ -352,10 +347,10 @@ def calc_callout_pointer(shape, geom: str, adjustments: dict) -> dict | None:
 def parse_shape(shape) -> dict:
     """解析普通图形（矩形、圆形、自定义等）"""
     info: dict[str, Any] = {
-        "id":   shape.shape_id, 
-        "name": shape.name, 
-        "type": "shape", 
-        "bbox": bbox(shape), 
+        "id":   shape.shape_id,
+        "name": shape.name,
+        "type": "shape",
+        "bbox": bbox(shape),
     }
     geom = get_shape_geometry(shape)
     if geom:
@@ -390,7 +385,6 @@ def parse_shape(shape) -> dict:
 
 
 # ─────────────────────────── 分组递归 ───────────────────────────
-
 def parse_group(group_shape, shape_id_map: dict, z_index: int = 0) -> dict:
     """递归解析分组，返回组内元素列表"""
     info: dict[str, Any] = {
@@ -398,7 +392,7 @@ def parse_group(group_shape, shape_id_map: dict, z_index: int = 0) -> dict:
         "name": group_shape.name,
         "type": "group",
         "bbox": bbox(group_shape),
-        "children": [], 
+        "children": [],
     }
     for i, child in enumerate(group_shape.shapes):
         parsed = dispatch_shape(child, shape_id_map, z_index=i)
@@ -426,7 +420,7 @@ def dispatch_shape(shape, shape_id_map: dict, z_index: int = 0) -> dict | None:
         result = parse_picture(shape)
     elif st == MSO_SHAPE_TYPE.GROUP:
         result = parse_group(shape, shape_id_map, z_index)
-    else: 
+    else:
         result = parse_shape(shape)
 
     if result is not None:
@@ -435,14 +429,13 @@ def dispatch_shape(shape, shape_id_map: dict, z_index: int = 0) -> dict | None:
     return result
 
 
-# ─────────────────────────── 层叠关系分析 ─────────────────────────── 
-
+# ─────────────────────────── 层叠关系分析 ───────────────────────────
 def analyze_overlap(elements: list[dict]) -> list[dict]:
     """
     分析非连接线元素之间的覆盖关系。
     为每个元素添加 covered_by / covers 字段（shape_id 列表）。
     """
-    # 只考虑有实体位置的元素（非连接线） 
+    # 只考虑有实体位置的元素（非连接线）
     solid = [e for e in elements if e.get("type") not in ("connector",) and e.get("bbox")]
 
     for i, elem in enumerate(solid):
@@ -470,12 +463,11 @@ def analyze_overlap(elements: list[dict]) -> list[dict]:
     return elements
 
 
-# ─────────────────────────── 连接线逻辑图 ─────────────────────────── 
-
+# ─────────────────────────── 连接线逻辑图 ───────────────────────────
 def build_connection_graph(elements: list[dict]) -> list[dict]:
     """
     从连接线中提取逻辑关系，生成 edges 列表。
-    edge: { from_id, from_name, to_id, to_name, label?, arrows? } 
+    edge: { from_id, from_name, to_id, to_name, label?, arrows? }
     """
     id_map = {e["id"]: e for e in elements}
     edges = []
@@ -486,7 +478,7 @@ def build_connection_graph(elements: list[dict]) -> list[dict]:
 
         edge: dict[str, Any] = {
             "connector_id": elem["id"],
-            "connector_name": elem["name"], 
+            "connector_name": elem["name"],
         }
         if "from_shape" in elem:
             fs = elem["from_shape"]
@@ -507,10 +499,9 @@ def build_connection_graph(elements: list[dict]) -> list[dict]:
 
 
 # ─────────────────────────── 幻灯片解析 ───────────────────────────
-
 def parse_slide(slide, slide_index: int) -> dict:
     """解析单张幻灯片"""
-    # 第一遍：建立 shape_id → {name} 映射（用于连接线引用） 
+    # 第一遍：建立 shape_id → {name} 映射（用于连接线引用）
     shape_id_map: dict[int, dict] = {}
     for shape in slide.shapes:
         shape_id_map[shape.shape_id] = {"name": shape.name}
@@ -531,7 +522,7 @@ def parse_slide(slide, slide_index: int) -> dict:
     # 幻灯片标题（第一个占位符文本）
     title = None
     try:
-        title = slide.shapes.title.text if slide.shapes.title else None 
+        title = slide.shapes.title.text if slide.shapes.title else None
     except Exception:
         pass
 
@@ -541,19 +532,17 @@ def parse_slide(slide, slide_index: int) -> dict:
         "elements": elements,
         "connection_graph": {
             "description": "图形间逻辑指向关系（edges）",
-            "edges": edges, 
-        }, 
+            "edges": edges,
+        },
     }
 
 
 # ─────────────────────────── 主入口 ───────────────────────────
-
-def parse_pptx(path: str) -> dict:
+def parse_pptx(file_path: str) -> dict:
     """解析整个 PPTX 文件，返回结构化 JSON dict"""
-    file_path = "C:/Users/zhuan_rzwfs19/Desktop/work/work06/file/② 基本設計書（対応方針）_SR・CR新利率体系_ver1.2.0.pptx"
     prs = Presentation(file_path)
     result: dict[str, Any] = {
-        "file": Path(path).name,
+        "file": Path(file_path).name,
         "slide_width_pt":  emu_to_pt(prs.slide_width),
         "slide_height_pt": emu_to_pt(prs.slide_height),
         "slide_count": len(prs.slides),
@@ -578,7 +567,7 @@ def to_markdown_summary(data: dict) -> str:
     for slide in data["slides"]:
         lines.append(f"## 第 {slide['slide_index']} 页{('：' + slide['title']) if slide['title'] else ''}")
         lines.append("")
-        
+
         # 元素汇总
         types: dict[str, int] = {}
         for e in slide["elements"]:
@@ -599,7 +588,7 @@ def to_markdown_summary(data: dict) -> str:
                 arr  = e.get("arrows", {})
                 arrow_str = ""
                 if arr.get("head") and arr.get("head") != "none":
-                    arrow_str = " →" 
+                    arrow_str = " →"
                 elif arr.get("tail") and arr.get("tail") != "none":
                     arrow_str = " ←"
                 lines.append(f"- `{frm}`{arrow_str} `{to}`{lbl}")
@@ -616,16 +605,16 @@ def to_markdown_summary(data: dict) -> str:
                 lines.append(f"- `{e['name']}` (type={e['type']}) 被 {', '.join('`'+n+'`' for n in cover_names)} 覆盖")
             lines.append("")
         
-        # 完整 JSON 
-        lines.append("---")
-        lines.append("")
-        lines.append("## 完整结构化 JSON")
-        lines.append("")
-        lines.append("```json")
-        lines.append(json.dumps(data, ensure_ascii=False, indent=2))
-        lines.append("```")
+    # 完整 JSON 
+    lines.append("---")
+    lines.append("")
+    lines.append("## 完整结构化 JSON")
+    lines.append("")
+    lines.append("```json")
+    lines.append(json.dumps(data, ensure_ascii=False, indent=2))
+    lines.append("```")
 
-        return "\n".join(lines)
+    return "\n".join(lines)
 
 
 # ─────────────────────────── CLI ───────────────────────────
