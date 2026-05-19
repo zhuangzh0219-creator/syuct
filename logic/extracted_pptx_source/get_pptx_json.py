@@ -311,6 +311,44 @@ def get_shape_adjustments(shape) -> dict:
     return result
 
 
+def calc_callout_pointer(shape, geom: str, adjustments: dict) -> dict | None:
+    """
+    计算吹き出し(callout)尾巴指向点坐标
+    返回:
+    {
+        "x": xxx,
+        "y": xxx
+    }
+    """
+
+    try:
+        left = emu_to_pt(shape.left)
+        top = emu_to_pt(shape.top)
+        width = emu_to_pt(shape.width)
+        height = emu_to_pt(shape.height)
+
+        if None in (left, top, width, height):
+            return None
+
+        # Office adjustment 参数
+        adj1 = adjustments.get("adj1")
+        adj2 = adjustments.get("adj2")
+
+        if adj1 is None or adj2 is None:
+            return None
+
+        x = left + width * (adj1 / 100000)
+        y = top + height * (adj2 / 100000)
+
+        return {
+            "x": round(x, 2),
+            "y": round(y, 2)
+        }
+
+    except Exception:
+        return None
+
+
 def parse_shape(shape) -> dict:
     """解析普通图形（矩形、圆形、自定义等）"""
     info: dict[str, Any] = {
@@ -326,6 +364,20 @@ def parse_shape(shape) -> dict:
         adjustments = get_shape_adjustments(shape)
         if adjustments:
             info["adjustments"] = adjustments
+    if geom:
+        info["geometry"] = geom
+
+        adjustments = get_shape_adjustments(shape)
+        if adjustments and "callout" in geom.lower():
+
+            pointer = calc_callout_pointer(
+                shape,
+                geom,
+                adjustments
+            )
+
+            if pointer:
+                info["pointer"] = pointer
     try:
         if shape.has_text_frame:
             paras = parse_text_frame(shape.text_frame)
@@ -352,7 +404,7 @@ def parse_group(group_shape, shape_id_map: dict, z_index: int = 0) -> dict:
         parsed = dispatch_shape(child, shape_id_map, z_index=i)
         if parsed:
             info["children"].append(parsed)
-        return info
+    return info
 
 
 # ─────────────────────────── 形状分发 ───────────────────────────
@@ -579,7 +631,9 @@ def to_markdown_summary(data: dict) -> str:
 # ─────────────────────────── CLI ───────────────────────────
 
 def get_pptx_source():
-    pptx_path = "C:/Users/zhuan_rzwfs19/Desktop/work/work06/file/a.pptx"
+    pptx_path = "C:/Users/tR16277/Desktop/work/work06/file/a.pptx"
     data = parse_pptx(pptx_path)
-    print(to_markdown_summary(data))
+    r = to_markdown_summary(data)
+    with open("./pptx_summary.md", "w", encoding="utf-8") as f:
+        f.write(r)
     return data
