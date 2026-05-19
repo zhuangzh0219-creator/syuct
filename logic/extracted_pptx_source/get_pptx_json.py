@@ -45,7 +45,6 @@ def bbox_overlaps(a: dict, b: dict) -> bool:
     """判断两个 bbox 是否重叠"""
     if None in (a["left"], a["top"], b["left"], b["top"]):
         return False
-
     ax2 = a["left"] + (a["width"] or 0)
     ay2 = a["top"]  + (a["height"] or 0)
     bx2 = b["left"] + (b["width"] or 0)
@@ -59,8 +58,8 @@ def parse_run(run) -> dict | None:
     text = run.text
     if not text:
         return None
-
     result: dict[str, Any] = {"text": text}
+
     # ── 删除线检测（直接读 a:rPr 的 strike 属性，最可靠）── 
     strike = False
     rPr = run._r.find(qn("a:rPr"))
@@ -69,12 +68,14 @@ def parse_run(run) -> dict | None:
         strike = s_val not in ("noStrike", "")
     if strike:
         result["strikethrough"] = True
-    # ── 粗体 / 斜体 ── 
+
+    # ── 粗体 / 斜体 ──
     font = run.font
     if font.bold:
         result["bold"] = True
     if font.italic:
         result["italic"] = True
+
     return result
 
 
@@ -117,7 +118,7 @@ def text_plain(tf) -> str:
 def is_connector(shape) -> bool:
     """判断是否为连接线/箭头"""
     try:
-        st = shape.shape_type 
+        st = shape.shape_type
         # MSO_SHAPE_TYPE.LINE = 9
         if st == MSO_SHAPE_TYPE.LINE:
             return True
@@ -402,7 +403,6 @@ def parse_group(group_shape, shape_id_map: dict, z_index: int = 0) -> dict:
 
 
 # ─────────────────────────── 形状分发 ───────────────────────────
-
 def dispatch_shape(shape, shape_id_map: dict, z_index: int = 0) -> dict | None:
     """根据形状类型分发到对应解析函数"""
     try:
@@ -604,7 +604,7 @@ def to_markdown_summary(data: dict) -> str:
                 cover_names = [id_name.get(cid, str(cid)) for cid in e["covered_by"]]
                 lines.append(f"- `{e['name']}` (type={e['type']}) 被 {', '.join('`'+n+'`' for n in cover_names)} 覆盖")
             lines.append("")
-        
+
     # 完整 JSON 
     lines.append("---")
     lines.append("")
