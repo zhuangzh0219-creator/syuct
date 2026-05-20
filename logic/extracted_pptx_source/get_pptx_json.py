@@ -675,8 +675,9 @@ def to_markdown_summary(data: dict) -> str:
 
 # ─────────────────────────── CLI ───────────────────────────
 
-def get_pptx_source(output_md: str = "./pptx_summary.md") -> dict:
+def get_pptx_source():
     pptx_path = "C:/Users/tR16277/Desktop/work/work06/file/a.pptx"
+    output_md: str = "C:/Users/tR16277/Desktop/work/work06/file/pptx_summary.md"
     data = parse_pptx(pptx_path)
     r = to_markdown_summary(data)
     with open(output_md, "w", encoding="utf-8") as f:
