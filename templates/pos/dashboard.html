@@ -1,0 +1,18 @@
+{% extends "pos/base.html" %}
+{% block title %}ダッシュボード{% endblock %}
+{% block content %}
+<section class="welcome-row"><div><h1>おかえりなさい 👋</h1><p>今日のお店の状況を確認しましょう。</p></div><a class="button button-primary" href="{% url 'pos' %}"><span>＋</span> 新しい会計</a></section>
+<section class="stat-grid">
+  <article class="stat-card"><div class="stat-top"><span>本日の売上</span><span class="stat-icon mint">￥</span></div><strong>¥{{ today_total }}</strong><small>税込・デモ決済を含む</small></article>
+  <article class="stat-card"><div class="stat-top"><span>本日の会計数</span><span class="stat-icon blue">▧</span></div><strong>{{ today_count }}<i> 件</i></strong><small>本日の販売件数</small></article>
+  <article class="stat-card"><div class="stat-top"><span>登録顧客</span><span class="stat-icon lilac">♙</span></div><strong>{{ customer_count }}<i> 名</i></strong><small>顧客データ</small></article>
+  <article class="stat-card"><div class="stat-top"><span>在庫わずか</span><span class="stat-icon peach">!</span></div><strong>{{ low_stock_count }}<i> 商品</i></strong><small>在庫5個以下の商品</small></article>
+</section>
+<section class="panel">
+  <div class="section-heading"><div><h2>最近の会計</h2><p>直近の販売履歴</p></div><a class="text-link" href="{% url 'receipts' %}">すべて見る <span>→</span></a></div>
+  {% if recent_sales %}<div class="table-wrap"><table><thead><tr><th>領収書番号</th><th>顧客</th><th>支払方法</th><th>日時</th><th class="align-right">合計</th></tr></thead><tbody>
+  {% for sale in recent_sales %}<tr><td><a class="table-link" href="{% url 'receipt_detail' sale.pk %}">{{ sale.receipt_number }}</a></td><td>{{ sale.customer.name|default:"ゲスト" }}</td><td><span class="method-tag">{{ sale.payment.get_method_display }}</span></td><td>{{ sale.created_at|date:"Y/m/d H:i" }}</td><td class="align-right strong">¥{{ sale.total }}</td></tr>{% endfor %}
+  </tbody></table></div>{% else %}<div class="empty-state"><span>▧</span><strong>まだ会計データがありません</strong><p>最初の販売を登録してみましょう。</p><a class="button button-light" href="{% url 'pos' %}">販売画面へ</a></div>{% endif %}
+</section>
+<div class="demo-note"><span>i</span><div><strong>デモ決済モード</strong><p>このシステムは決済画面の動作確認用です。PayPay・Alipay等を選択しても実際のお金は動きません。</p></div></div>
+{% endblock %}

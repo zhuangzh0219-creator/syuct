@@ -1,0 +1,11 @@
+{% extends "pos/base.html" %}
+{% block title %}売上レポート{% endblock %}{% block page_heading %}売上レポート{% endblock %}
+{% block content %}
+<section class="welcome-row"><div><h1>売上レポート</h1><p>期間ごとの売上と支払方法を確認できます。</p></div></section>
+<form class="date-filter panel" method="get"><label>開始日<input type="date" name="start" value="{{ start|date:'Y-m-d' }}"></label><span>〜</span><label>終了日<input type="date" name="end" value="{{ end|date:'Y-m-d' }}"></label><button class="button button-primary" type="submit">集計する</button><a class="button button-light" href="{% url 'report_export' %}?start={{ start|date:'Y-m-d' }}&amp;end={{ end|date:'Y-m-d' }}">CSVをダウンロード ↓</a></form>
+<section class="stat-grid report-stats"><article class="stat-card"><div class="stat-top"><span>期間売上</span><span class="stat-icon mint">￥</span></div><strong>¥{{ sales_total }}</strong><small>{{ start|date:"Y/m/d" }} 〜 {{ end|date:"Y/m/d" }}</small></article><article class="stat-card"><div class="stat-top"><span>会計件数</span><span class="stat-icon blue">▧</span></div><strong>{{ sales_count }}<i> 件</i></strong><small>決済済みの会計</small></article></section>
+<div class="report-columns">
+<section class="panel"><div class="section-heading"><div><h2>支払方法別</h2><p>決済方法ごとの件数と売上</p></div></div><div class="table-wrap"><table><thead><tr><th>支払方法</th><th class="align-right">件数</th><th class="align-right">売上</th></tr></thead><tbody>{% for row in payment_totals %}<tr><td><span class="method-tag">{{ row.method_label }}</span></td><td class="align-right">{{ row.count }}</td><td class="align-right strong">¥{{ row.total }}</td></tr>{% empty %}<tr><td colspan="3" class="table-empty">この期間のデータはありません。</td></tr>{% endfor %}</tbody></table></div></section>
+<section class="panel"><div class="section-heading"><div><h2>人気商品</h2><p>販売数量の多い商品</p></div></div><div class="table-wrap"><table><thead><tr><th>商品名</th><th class="align-right">数量</th><th class="align-right">売上</th></tr></thead><tbody>{% for item in top_products %}<tr><td class="strong">{{ item.product_name }}</td><td class="align-right">{{ item.quantity }}</td><td class="align-right">¥{{ item.total }}</td></tr>{% empty %}<tr><td colspan="3" class="table-empty">この期間のデータはありません。</td></tr>{% endfor %}</tbody></table></div></section>
+</div>
+{% endblock %}

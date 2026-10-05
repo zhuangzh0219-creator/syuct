@@ -1,0 +1,20 @@
+{% extends "pos/base.html" %}
+{% block title %}商品管理{% endblock %}{% block page_heading %}商品管理{% endblock %}
+{% block content %}
+<section class="welcome-row"><div><h1>商品管理</h1><p>販売する商品の価格と在庫を登録します。</p></div></section>
+<div class="management-layout">
+  <section class="panel form-panel"><div class="section-heading"><div><h2>商品を追加</h2><p>商品情報を入力してください</p></div></div>
+    <form method="post" class="stack-form">{% csrf_token %}
+      <label>商品名<input name="name" maxlength="120" required placeholder="例：ブレンドコーヒー" style="width: 85%; box-sizing: border-box;"></label>
+      <label>商品コード<input name="sku" maxlength="40" required placeholder="例：DR-003" style="width: 85%; box-sizing: border-box;"></label>
+      <div class="form-two"><label>価格（税込・円）<input name="price" type="number" min="0" required placeholder="500" style="width: 80%; box-sizing: border-box;"></label><label>在庫数<input name="stock" type="number" min="0" required placeholder="20" style="width: 80%; box-sizing: border-box;"></label></div>
+      <button class="button button-primary" type="submit">商品を登録</button>
+    </form>
+  </section>
+  <section class="panel"><div class="section-heading"><div><h2>商品一覧 <span class="count-pill">{{ products|length }}</span></h2><p>登録されている商品</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>商品名</th><th>商品コード</th><th class="align-right">価格</th><th class="align-right">在庫</th><th>状態</th></tr></thead><tbody>
+    {% for product in products %}<tr><td class="strong">{{ product.name }}</td><td class="muted">{{ product.sku }}</td><td class="align-right">¥{{ product.price }}</td><td class="align-right">{{ product.stock }}</td><td><span class="status-pill {% if not product.is_active %}inactive{% elif product.stock <= 5 %}warning{% endif %}">{% if not product.is_active %}停止中{% elif product.stock <= 5 %}残りわずか{% else %}販売中{% endif %}</span></td></tr>{% empty %}<tr><td colspan="5" class="table-empty">商品がありません。</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+</div>
+{% endblock %}

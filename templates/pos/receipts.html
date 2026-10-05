@@ -1,0 +1,10 @@
+{% extends "pos/base.html" %}
+{% block title %}領収書{% endblock %}{% block page_heading %}領収書一覧{% endblock %}
+{% block content %}
+<section class="welcome-row"><div><h1>領収書一覧</h1><p>決済済みの取引と領収書データを確認できます。</p></div><a class="button button-light" href="{% url 'reports' %}">売上レポート →</a></section>
+<section class="panel"><div class="section-heading"><div><h2>すべての領収書</h2><p>新しい順に表示</p></div><span class="count-pill">{{ sales|length }} 件</span></div>
+<div class="table-wrap"><table><thead><tr><th>領収書番号</th><th>顧客</th><th>支払方法</th><th>発行日時</th><th class="align-right">合計</th><th></th></tr></thead><tbody>
+{% for sale in sales %}<tr><td><a class="table-link" href="{% url 'receipt_detail' sale.pk %}">{{ sale.receipt_number }}</a></td><td>{{ sale.customer.name|default:"ゲスト" }}</td><td><span class="method-tag">{{ sale.payment.get_method_display }}</span></td><td>{{ sale.created_at|date:"Y/m/d H:i" }}</td><td class="align-right strong">¥{{ sale.total }}</td><td><a class="icon-link" title="CSVダウンロード" href="{% url 'receipt_download' sale.pk %}">↓</a></td></tr>
+{% empty %}<tr><td colspan="6" class="table-empty">領収書データがありません。販売画面から会計してください。</td></tr>{% endfor %}
+</tbody></table></div></section>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "pos/base.html" %}
+{% block title %}顧客管理{% endblock %}{% block page_heading %}顧客管理{% endblock %}
+{% block content %}
+<section class="welcome-row"><div><h1>顧客管理</h1><p>顧客情報を登録し、会計履歴と紐づけます。</p></div></section>
+<div class="management-layout">
+  <section class="panel form-panel"><div class="section-heading"><div><h2>顧客を追加</h2><p>名前だけでも登録できます</p></div></div>
+    <form method="post" class="stack-form">{% csrf_token %}
+      <label>顧客名<input name="name" maxlength="120" required placeholder="例：山田 花子"></label>
+      <label>メールアドレス<input name="email" type="email" maxlength="254" placeholder="hanako@example.jp"></label>
+      <label>電話番号<input name="phone" maxlength="30" placeholder="090-0000-0000"></label>
+      <button class="button button-primary" type="submit">顧客を登録</button>
+    </form>
+  </section>
+  <section class="panel"><div class="section-heading"><div><h2>顧客一覧 <span class="count-pill">{{ customers|length }}</span></h2><p>登録されている顧客</p></div></div>
+    <div class="table-wrap"><table><thead><tr><th>顧客名</th><th>メールアドレス</th><th>電話番号</th><th>登録日</th></tr></thead><tbody>
+    {% for customer in customers %}<tr><td class="strong">{{ customer.name }}</td><td>{{ customer.email|default:"—" }}</td><td>{{ customer.phone|default:"—" }}</td><td>{{ customer.created_at|date:"Y/m/d" }}</td></tr>{% empty %}<tr><td colspan="4" class="table-empty">顧客がありません。</td></tr>{% endfor %}
+    </tbody></table></div>
+  </section>
+</div>
+{% endblock %}

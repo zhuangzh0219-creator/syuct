@@ -1,0 +1,14 @@
+{% extends "pos/base.html" %}
+{% block title %}領収書 {{ sale.receipt_number }}{% endblock %}{% block page_heading %}領収書の詳細{% endblock %}
+{% block content %}
+<div class="receipt-actions"><a class="back-link" href="{% url 'receipts' %}">← 領収書一覧へ戻る</a><a class="button button-light" href="{% url 'receipt_download' sale.pk %}">↓ CSVをダウンロード</a></div>
+<section class="receipt-paper">
+  <div class="receipt-brand"><span class="brand-mark">n</span><span>Nagi POS</span></div>
+  <div class="receipt-title"><div class="eyebrow">RECEIPT</div><h1>領収書</h1></div>
+  <div class="receipt-info"><div><span>領収書番号</span><strong>{{ sale.receipt_number }}</strong></div><div><span>発行日時</span><strong>{{ sale.created_at|date:"Y年n月j日 H:i" }}</strong></div><div><span>お客様</span><strong>{{ sale.customer.name|default:"ゲスト" }} 様</strong></div></div>
+  <table class="receipt-table"><thead><tr><th>商品</th><th class="align-right">単価</th><th class="align-right">数量</th><th class="align-right">金額</th></tr></thead><tbody>{% for item in sale.items.all %}<tr><td>{{ item.product_name }}</td><td class="align-right">¥{{ item.unit_price }}</td><td class="align-right">{{ item.quantity }}</td><td class="align-right">¥{{ item.line_total }}</td></tr>{% endfor %}</tbody></table>
+  <div class="receipt-total"><span>合計（税込）</span><strong>¥{{ sale.total }}</strong></div>
+  <div class="receipt-payment"><span>お支払方法</span><strong>{{ sale.payment.get_method_display }}</strong></div>
+  <div class="receipt-demo">デモ決済の記録です。実際の決済は行われていません。</div>
+</section>
+{% endblock %}

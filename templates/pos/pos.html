@@ -1,0 +1,115 @@
+{% extends "pos/base.html" %}
+{% block title %}販売・会計{% endblock %}
+{% block page_heading %}販売・会計{% endblock %}
+{% block content %}
+<div class="pos-layout">
+  <section class="product-browser">
+    <div class="pos-intro"><div><div class="eyebrow">SALES COUNTER</div><h1>商品を選択</h1><p>タップしてカートに追加します。</p></div><span class="product-count">{{ products|length }} 商品</span></div>
+    <label class="search-box"><span>⌕</span><input id="product-search" type="search" placeholder="商品名・コードで検索" autocomplete="off"></label>
+    <div class="product-grid" id="product-grid">
+    {% for product in products %}<button class="product-card" type="button" data-id="{{ product.pk }}" data-name="{{ product.name }}" data-price="{{ product.price }}" data-stock="{{ product.stock }}" data-sku="{{ product.sku }}">
+      <span class="product-visual visual-{{ forloop.counter0|divisibleby:4 }}">{{ forloop.counter0|add:1|stringformat:"02d" }}</span><span class="product-name">{{ product.name }}</span><span class="product-meta">{{ product.sku }} · 在庫 {{ product.stock }}</span><strong>¥{{ product.price }}</strong>
+    </button>{% empty %}<div class="empty-state"><strong>販売できる商品がありません</strong><p>商品管理から商品を登録してください。</p><a class="button button-light" href="{% url 'products' %}">商品を登録</a></div>{% endfor %}
+    </div>
+  </section>
+  <aside class="cart-panel">
+    <div class="cart-head"><div><h2>現在の会計</h2><p id="cart-count">商品を選択してください</p></div><button class="plain-button" type="button" id="clear-cart">クリア</button></div>
+    <div class="cart-items" id="cart-items"><div class="cart-empty"><span>🛍</span><p>商品をタップすると<br>ここに表示されます</p></div></div>
+    <div class="cart-bottom">
+      <label class="field-label" for="customer-select">顧客 <a href="{% url 'customers' %}">顧客を登録 ↗</a></label>
+      <select id="customer-select"><option value="">ゲスト（顧客を選択しない）</option>{% for customer in customers %}<option value="{{ customer.pk }}">{{ customer.name }}</option>{% endfor %}</select>
+      <div class="field-label payment-label">支払方法 <span>デモ</span></div>
+      <div class="payment-options">
+        {% for value,label in payment_methods %}<label class="payment-option"><input type="radio" name="payment-method" value="{{ value }}" {% if forloop.first %}checked{% endif %}><span>{{ label }}</span></label>{% endfor %}
+      </div>
+      <div class="total-row"><span>合計（税込）</span><strong id="cart-total">¥0</strong></div>
+      <button class="button button-primary pay-button" type="button" id="pay-button" disabled>会計する <span>→</span></button>
+      <p class="secure-hint">🔒 デモ決済です。実際の決済は行われません。</p>
+    </div>
+  </aside>
+</div>
+<dialog class="result-dialog" id="result-dialog"><div class="dialog-check">✓</div><h2>お支払いが完了しました</h2><p id="result-message"></p><div class="dialog-actions"><button class="button button-light" id="continue-sale" type="button">続けて会計</button><a class="button button-primary" id="receipt-link" href="#">領収書を見る</a></div></dialog>
+{% endblock %}
+{% block scripts %}<script>
+(() => {
+  const cart = new Map();
+  const itemsEl = document.getElementById("cart-items");
+  const totalEl = document.getElementById("cart-total");
+  const countEl = document.getElementById("cart-count");
+  const payButton = document.getElementById("pay-button");
+  const dialog = document.getElementById("result-dialog");
+  const yen = value => "¥" + value.toLocaleString("ja-JP");
+  function renderCart() {
+    itemsEl.innerHTML = "";
+    let total = 0, count = 0;
+    for (const [id, item] of cart) {
+      total += item.price * item.quantity;
+      count += item.quantity;
+      const row = document.createElement("div");
+      row.className = "cart-item";
+      const info = document.createElement("div");
+      info.className = "cart-item-info";
+      const name = document.createElement("strong");
+      name.textContent = item.name;
+      const price = document.createElement("span");
+      price.textContent = yen(item.price);
+      info.append(name, price);
+      const controls = document.createElement("div");
+      controls.className = "quantity-controls";
+      const minus = document.createElement("button");
+      minus.type = "button"; minus.textContent = "−"; minus.setAttribute("aria-label", item.name + "を1個減らす");
+      minus.addEventListener("click", () => { item.quantity--; if (!item.quantity) cart.delete(id); renderCart(); });
+      const quantity = document.createElement("span");
+      quantity.textContent = item.quantity;
+      const plus = document.createElement("button");
+      plus.type = "button"; plus.textContent = "+"; plus.setAttribute("aria-label", item.name + "を1個増やす");
+      plus.disabled = item.quantity >= item.stock;
+      plus.addEventListener("click", () => { if (item.quantity < item.stock) item.quantity++; renderCart(); });
+      controls.append(minus, quantity, plus);
+      const lineTotal = document.createElement("strong");
+      lineTotal.className = "cart-line-total"; lineTotal.textContent = yen(item.price * item.quantity);
+      row.append(info, controls, lineTotal);
+      itemsEl.append(row);
+    }
+    if (!count) itemsEl.innerHTML = '<div class="cart-empty"><span>🛍</span><p>商品をタップすると<br>ここに表示されます</p></div>';
+    totalEl.textContent = yen(total);
+    countEl.textContent = count ? count + " 点の商品" : "商品を選択してください";
+    payButton.disabled = !count;
+  }
+  document.querySelectorAll(".product-card").forEach(button => button.addEventListener("click", () => {
+    const id = button.dataset.id;
+    const item = cart.get(id) || { name: button.dataset.name, price: Number(button.dataset.price), stock: Number(button.dataset.stock), quantity: 0 };
+    if (item.quantity < item.stock) { item.quantity++; cart.set(id, item); renderCart(); }
+  }));
+  document.getElementById("product-search").addEventListener("input", event => {
+    const query = event.target.value.trim().toLocaleLowerCase();
+    document.querySelectorAll(".product-card").forEach(card => {
+      card.hidden = !(card.dataset.name.toLocaleLowerCase().includes(query) || card.dataset.sku.toLocaleLowerCase().includes(query));
+    });
+  });
+  document.getElementById("clear-cart").addEventListener("click", () => { cart.clear(); renderCart(); });
+  document.getElementById("continue-sale").addEventListener("click", () => dialog.close());
+  payButton.addEventListener("click", async () => {
+    payButton.disabled = true;
+    const body = new URLSearchParams();
+    body.set("cart", JSON.stringify(Array.from(cart, ([id, item]) => ({ id, quantity: item.quantity }))));
+    body.set("customer_id", document.getElementById("customer-select").value);
+    body.set("payment_method", document.querySelector('input[name="payment-method"]:checked').value);
+    try {
+      const response = await fetch("{% url 'checkout' %}", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", "X-CSRFToken": document.cookie.split("; ").find(row => row.startsWith("csrftoken="))?.split("=")[1] || "" },
+        body
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "会計に失敗しました。");
+      document.getElementById("result-message").textContent = result.message;
+      document.getElementById("receipt-link").href = result.receipt_url;
+      cart.clear(); renderCart(); dialog.showModal();
+    } catch (error) {
+      window.alert(error.message);
+      payButton.disabled = cart.size === 0;
+    }
+  });
+})();
+</script>{% endblock %}
